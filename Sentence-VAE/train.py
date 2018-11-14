@@ -17,8 +17,8 @@ def main(args):
 
     ts = time.strftime('%Y-%b-%d-%H:%M:%S', time.gmtime())
 
-    # splits = ['train', 'valid'] + (['test'] if args.test else [])
-    splits = ['train'] + (['test'] if args.test else [])
+    splits = ['train', 'valid'] + (['test'] if args.test else [])
+    # splits = ['train'] + (['test'] if args.test else [])
 
 
     datasets = OrderedDict()
@@ -176,7 +176,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--data_dir', type=str, default='data1')
+    parser.add_argument('--data_dir', type=str, default='data-af')
     parser.add_argument('--create_data', action='store_true')
     parser.add_argument('--max_sequence_length', type=int, default=60)
     parser.add_argument('--min_occ', type=int, default=1)
