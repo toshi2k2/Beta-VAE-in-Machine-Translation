@@ -1,0 +1,2 @@
+python3 train.py -data preprocessed_data -save_model baseline-model -gpu_ranks 0
+
