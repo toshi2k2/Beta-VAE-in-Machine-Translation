@@ -47,7 +47,7 @@ def split(trunk_file):
 
 
 def main():
-    arg = sys.argv[1]
-    split(arg)
+    org_file = sys.argv[1]
+    split(org_file)
 if __name__ ==  "__main__":
     main()
