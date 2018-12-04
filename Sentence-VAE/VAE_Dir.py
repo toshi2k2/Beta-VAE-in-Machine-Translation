@@ -2,14 +2,118 @@ import torch
 import torch.nn as nn
 import torch.nn.utils.rnn as rnn_utils
 from utils import to_var
+import torch.nn.functional as F
 
-class SentenceVAE(nn.Module):
+class SamplingReparamKL:
+    def __init__(self, latent_dim):
+        """Sampling Reparameterization using Optimal KL-Divergence
+        between k-dimensional Dirichlet and Logistic Normal.
+
+            mu_i = digamma(alpha_i) - digamma(alpha_k)
+            sigma_i = trigammma(alpha_i) - trigamma(alpha_k)
+
+        :param latent_dim: width of the latent dimension
+        :param batch_size: batch size for stocastic gradient descent
+        :return:
+        """
+        self.latent_dim = latent_dim
+
+    def to_mu(self, alpha):
+        """
+        :param alpha: (Tensor)
+        :return: (Tensor) mu
+        """
+        d1 = self.latent_dim - 1
+        digamma_d = torch.digamma(alpha[:, -1:])
+        mu = torch.digamma(alpha[:, :d1]) - digamma_d
+        return mu
+
+    def to_sd(self, alpha):
+        """
+        :param alpha: (Tensor)
+        :return: sigma (Tensor)
+        """
+        # maybe not have this function.
+        # _one = torch.cast(1, dtype=alpha.dtype)
+        _one = torch.tensor(1)
+        d1 = self.latent_dim - 1
+        var = (torch.polygamma( 1 , alpha[:, :d1])
+               + torch.polygamma(1 , alpha[:, -1:]))
+        sigma = torch.sqrt(var)
+        return sigma
+
+    def sample(self, args, batch_size):
+        """ Sample from Logistic Normal(mu,sigma) specified by the
+        reparameterization
+
+        :param args: (mu, sigma)[Tensor, Tensor]
+        :return: z* sample
+        """
+        mu, sigma = args
+        z = to_var(torch.randn([batch_size, self.latent_dim-1]))
+        z = mu + sigma * z
+        one = torch.ones((batch_size, 1))
+        z_star = F.softmax(torch.cat([z, one], dim=1))
+        return z_star
+
+
+class SamplingReparamLaplace:
+    def __init__(self, latent_dim):
+        """Sampling Reparameterization using Laplace Apprixmation
+        between k-dimensional Dirichlet and Logistic Normal.
+
+           mu_i = log(alpha_i) - mean(log(alpha))
+           sigma_i = (1 - 2/k) * 1/alpha + 1/k^2 * sum(1/alpha)
+
+        :param latent_dim: width of the latent dimension
+        :param batch_size: batch size for stocastic gradient descent
+        :return:
+        """
+        self.latent_dim = latent_dim
+
+    def to_mu(self, alpha):
+        """
+        :param alpha: (Tensor)
+        :return: mu (Tensor)
+        """
+        log_alpha = torch.log(alpha)
+        mean_log_alpha = torch.mean(log_alpha, dim=-1).unsqueeze(-1)
+        mu = log_alpha - mean_log_alpha
+        return mu
+
+    def to_sd(self, alpha):
+        """
+        :param alpha: (Tensor)
+        :return: sigma (Tensor)
+        """
+        k1 = 1 - (2 / self.latent_dim)
+        k2 = 1 / (self.latent_dim ** 2)
+        sigma = k1 * 1/alpha + k2 * torch.sum(1/alpha, dim=-1).unsqueeze(-1)
+        return sigma
+
+    def sample(self, args, batch_size):
+        """Sample from Logistic Normal(mu,sigma) specified by the
+        reparameterization
+
+        :param alpha:
+        :return:
+        """
+        mu, sigma = args
+        e = to_var(torch.randn([batch_size, self.latent_dim]))
+        z_star = F.softmax(mu + sigma * e)
+        return z_star
+
+
+class VAE_Dir(nn.Module):
 
     def __init__(self, vocab_size, embedding_size, rnn_type, hidden_size, word_dropout, embedding_dropout, latent_size,
                 sos_idx, eos_idx, pad_idx, unk_idx, max_sequence_length, num_layers=1, bidirectional=False):
 
         super().__init__()
         self.tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
+
+        if True:
+            self.reparam = SamplingReparamLaplace(latent_size)
 
         self.max_sequence_length = max_sequence_length
         self.sos_idx = sos_idx
@@ -42,8 +146,9 @@ class SentenceVAE(nn.Module):
 
         self.hidden_factor = (2 if bidirectional else 1) * num_layers
 
-        self.hidden2mean = nn.Linear(hidden_size * self.hidden_factor, latent_size)
-        self.hidden2logv = nn.Linear(hidden_size * self.hidden_factor, latent_size)
+        self.hidden2alpha = nn.Linear(hidden_size * self.hidden_factor, latent_size)
+        self.hidden2scale = nn.Linear(hidden_size * self.hidden_factor, latent_size)
+
         self.latent2hidden = nn.Linear(latent_size, hidden_size * self.hidden_factor)
         self.outputs2vocab = nn.Linear(hidden_size * (2 if bidirectional else 1), vocab_size)
 
@@ -70,13 +175,17 @@ class SentenceVAE(nn.Module):
         # REPARAMETERIZATION
         # if we want to change the Dirchlet
         # Modify this part here... 
-        # MODIFY... 
-        mean = self.hidden2mean(hidden)
-        logv = self.hidden2logv(hidden)
-        std = torch.exp(0.5 * logv)
+        # MODIFY (return all the parameter(alpha) and the actual sample)
+        alpha = F.tanh(self.hidden2alpha(hidden))
+        scale = F.softplus(self.hidden2scale(hidden))
+        alpha = torch.exp(scale * alpha)
 
-        z = to_var(torch.randn([batch_size, self.latent_size]))
-        z = z * std + mean
+        mean = self.reparam.to_mu(alpha)
+        # maybe reshape to latent_dim
+
+        std = self.reparam.to_sd(alpha)
+
+        z = self.reparam.sample([mean, std], batch_size)
 
         ####################################################################
 
@@ -93,8 +202,6 @@ class SentenceVAE(nn.Module):
         if self.word_dropout_rate > 0:
             # randomly replace decoder input with <unk>
             prob = torch.rand(input_sequence.size())
-            if torch.cuda.is_available():
-                prob=prob.cuda()
             prob[(input_sequence.data - self.sos_idx) * (input_sequence.data - self.pad_idx) == 0] = 1
             decoder_input_sequence = input_sequence.clone()
             decoder_input_sequence[prob < self.word_dropout_rate] = self.unk_idx
@@ -117,14 +224,20 @@ class SentenceVAE(nn.Module):
         logp = logp.view(b, s, self.embedding.num_embeddings)
 
 
-        return logp, mean, logv, z
+        return logp, alpha, z
 
 
     def inference(self, n=4, z=None):
 
         if z is None:
             batch_size = n
-            z = to_var(torch.randn([batch_size, self.latent_size]))
+            ############################# GENERATION OF Z #########################
+            beta = torch.ones([batch_size, self.latent_size])
+            sum1 = torch.sum(beta, dim=1, keepdim=True)
+            alpha = beta/sum1
+            mean = self.reparam.to_mu(alpha)
+            std = self.reparam.to_sd(alpha)
+            z = self.reparam.sample([mean, std], batch_size)
         else:
             batch_size = z.size(0)
 
@@ -182,6 +295,7 @@ class SentenceVAE(nn.Module):
             t += 1
 
         return generations, z
+
 
     def _sample(self, dist, mode='greedy'):
 
