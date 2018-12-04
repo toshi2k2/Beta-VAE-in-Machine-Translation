@@ -155,7 +155,8 @@ class PTB(Dataset):
                 w2c.update(words)
 
             for w, c in w2c.items():
-                if c > self.min_occ and w not in special_tokens:
+                if c > 0 and w not in special_tokens:
+                # if c > self.min_occ and w not in special_tokens:
                     i2w[len(w2i)] = w
                     w2i[w] = len(w2i)
 

@@ -3,7 +3,6 @@ import json
 import torch
 import argparse
 
-from model import SentenceVAE
 from utils import to_var, idx2word, interpolate
 from VAE_Dir import VAE_Dir
 
@@ -15,7 +14,7 @@ def main(args):
 
     w2i, i2w = vocab['w2i'], vocab['i2w']
 
-    model = SentenceVAE(
+    model = VAE_Dir(
         vocab_size=len(w2i),
         sos_idx=w2i['<sos>'],
         eos_idx=w2i['<eos>'],
@@ -43,16 +42,16 @@ def main(args):
     
     model.eval()
 
-    samples, z = model.inference(n=args.num_samples)
-    print('----------SAMPLES----------')
-    print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
+    for i in range(args.num_samples//20) :
+        samples, z = model.inference(n=20)
+        print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
 
-    z1 = torch.randn([args.latent_size]).numpy()
-    z2 = torch.randn([args.latent_size]).numpy()
-    z = to_var(torch.from_numpy(interpolate(start=z1, end=z2, steps=8)).float())
-    samples, _ = model.inference(z=z)
-    print('-------INTERPOLATION-------')
-    print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
+    # z1 = torch.randn([args.latent_size]).numpy()
+    # z2 = torch.randn([args.latent_size]).numpy()
+    # z = to_var(torch.from_numpy(interpolate(start=z1, end=z2, steps=8)).float())
+    # samples, _ = model.inference(z=z)
+    # print('-------INTERPOLATION-------')
+    # print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
 
 if __name__ == '__main__':
 

@@ -11,7 +11,7 @@ from collections import OrderedDict, defaultdict
 
 from ptb import PTB
 from utils import to_var, idx2word, expierment_name
-from model import SentenceVAE
+from VAE_Dir import VAE_Dir
 
 def main(args):
 
@@ -31,7 +31,7 @@ def main(args):
             min_occ=args.min_occ
         )
 
-    model = SentenceVAE(
+    model = VAE_Dir(
         vocab_size=datasets['train'].vocab_size,
         sos_idx=datasets['train'].sos_idx,
         eos_idx=datasets['train'].eos_idx,
@@ -62,6 +62,20 @@ def main(args):
     save_model_path = os.path.join(args.save_model_path, ts)
     os.makedirs(save_model_path)
 
+    def dir_KL_loss(alpha):
+        a0 = torch.sum(alpha, dim=-1).unsqueeze(-1)
+        beta = torch.ones(alpha.shape)
+        sum1 = torch.sum(beta, dim=1, keepdim=True)
+        beta = beta/sum1
+
+        kl = torch.sum(torch.lgamma(a0).view(-1)
+              - torch.sum(torch.lgamma(alpha), dim=-1)
+              + torch.sum(alpha * torch.digamma(alpha), dim=-1)
+              - torch.sum(alpha * torch.digamma(a0), dim=-1)
+              + torch.sum(torch.lgamma(beta), dim=-1)
+              - torch.mean(torch.digamma(alpha) - torch.digamma(a0), dim=-1))
+        return  kl
+
     def kl_anneal_function(anneal_function, step, k, x0):
         if anneal_function == 'logistic':
             return float(1/(1+np.exp(-k*(step-x0))))
@@ -69,7 +83,7 @@ def main(args):
             return min(1, step/x0)
 
     NLL = torch.nn.NLLLoss(size_average=False, ignore_index=datasets['train'].pad_idx)
-    def loss_fn(logp, target, length, mean, logv, anneal_function, step, k, x0):
+    def loss_fn(logp, target, length, alpha, anneal_function, step, k, x0):
 
         # cut-off unnecessary padding from target, and flatten
         target = target[:, :torch.max(length).data[0]].contiguous().view(-1)
@@ -77,11 +91,8 @@ def main(args):
         
         # Negative Log Likelihood
         NLL_loss = NLL(logp, target)
-
         # KL Divergence
-        # print((1 + logv - mean.pow(2) - logv.exp()).shape)
-        KL_loss = -0.5 * torch.sum(1 + logv - mean.pow(2) - logv.exp())
-
+        KL_loss = dir_KL_loss(alpha)
         KL_weight = kl_anneal_function(anneal_function, step, k, x0)
 
         return NLL_loss, KL_loss, KL_weight
@@ -110,8 +121,8 @@ def main(args):
             else:
                 model.eval()
 
+                # LISA
             for iteration, batch in enumerate(data_loader):
-
                 batch_size = batch['input'].size(0)
 
                 for k, v in batch.items():
@@ -119,10 +130,11 @@ def main(args):
                         batch[k] = to_var(v)
 
                 # Forward pass
-                logp, mean, logv, z = model(batch['input'], batch['length'])
+                logp, alpha, z = model(batch['input'], batch['length'])
+
                 # loss calculation
                 NLL_loss, KL_loss, KL_weight = loss_fn(logp, batch['target'],
-                    batch['length'], mean, logv, args.anneal_function, step, args.k, args.x0)
+                    batch['length'], alpha, args.anneal_function, step, args.k, args.x0)
 
                 loss = (NLL_loss + KL_weight * KL_loss)/batch_size
 
@@ -135,7 +147,17 @@ def main(args):
 
 
                 # bookkeepeing
-                # tracker['ELBO'] = torch.cat((tracker['ELBO'], loss.data))
+                tracker['ELBO'] = torch.cat((tracker['ELBO'].view(-1), loss.data.view(-1)))
+                # print(tracker['ELBO'])
+                # print(tracker['ELBO'].nelement())
+                # if tracker['ELBO'].nelement() != 0 :
+                #     print('1')
+                #     print(tracker['ELBO'].shape)
+                #     print(loss.data.shape)
+                #     tracker['ELBO'] = torch.cat((tracker['ELBO'].view(-1), loss.data.view(-1)))
+                # else:
+                #     print('2')
+                #     tracker['ELBO'] = loss.data
 
                 if args.tensorboard_logging:
                     writer.add_scalar("%s/ELBO"%split.upper(), loss.data[0], epoch*len(data_loader) + iteration)
