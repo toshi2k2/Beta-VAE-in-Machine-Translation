@@ -1,0 +1,39 @@
+THCudaCheck FAIL file=/pytorch/aten/src/THC/THCTensorCopy.cu line=206 error=48 : no kernel image is available for execution on the device
+/home/fwu/.local/lib/python3.5/site-packages/torch/cuda/__init__.py:116: UserWarning: 
+    Found GPU0 Tesla K10.G2.8GB which is of cuda capability 3.0.
+    PyTorch no longer supports this GPU because it is too old.
+    
+  warnings.warn(old_gpu_warn % (d, name, major, capability[1]))
+/home/fwu/.local/lib/python3.5/site-packages/torch/cuda/__init__.py:116: UserWarning: 
+    Found GPU1 Tesla K10.G2.8GB which is of cuda capability 3.0.
+    PyTorch no longer supports this GPU because it is too old.
+    
+  warnings.warn(old_gpu_warn % (d, name, major, capability[1]))
+/home/fwu/.local/lib/python3.5/site-packages/torch/cuda/__init__.py:116: UserWarning: 
+    Found GPU2 Tesla K10.G2.8GB which is of cuda capability 3.0.
+    PyTorch no longer supports this GPU because it is too old.
+    
+  warnings.warn(old_gpu_warn % (d, name, major, capability[1]))
+/home/fwu/.local/lib/python3.5/site-packages/torch/cuda/__init__.py:116: UserWarning: 
+    Found GPU3 Tesla K10.G2.8GB which is of cuda capability 3.0.
+    PyTorch no longer supports this GPU because it is too old.
+    
+  warnings.warn(old_gpu_warn % (d, name, major, capability[1]))
+Traceback (most recent call last):
+  File "/export/b02/fwu/MT/final_project/Beta-VAE-in-Machine-Translation/Fei/LanguageModel/main.py", line 197, in <module>
+    train()
+  File "/export/b02/fwu/MT/final_project/Beta-VAE-in-Machine-Translation/Fei/LanguageModel/main.py", line 158, in train
+    output, hidden = model(data, hidden)
+  File "/home/fwu/.local/lib/python3.5/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/export/b02/fwu/MT/final_project/Beta-VAE-in-Machine-Translation/Fei/LanguageModel/model.py", line 45, in forward
+    emb = self.drop(self.encoder(input))
+  File "/home/fwu/.local/lib/python3.5/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/home/fwu/.local/lib/python3.5/site-packages/torch/nn/modules/dropout.py", line 53, in forward
+    return F.dropout(input, self.p, self.training, self.inplace)
+  File "/home/fwu/.local/lib/python3.5/site-packages/torch/nn/functional.py", line 595, in dropout
+    return _functions.dropout.Dropout.apply(input, p, training, inplace)
+  File "/home/fwu/.local/lib/python3.5/site-packages/torch/nn/_functions/dropout.py", line 34, in forward
+    output = input.clone()
+RuntimeError: cuda runtime error (48) : no kernel image is available for execution on the device at /pytorch/aten/src/THC/THCTensorCopy.cu:206

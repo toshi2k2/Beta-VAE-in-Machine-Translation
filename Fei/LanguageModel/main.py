@@ -59,6 +59,7 @@ device = torch.device("cuda" if args.cuda else "cpu")
 # Load data
 ###############################################################################
 
+print("data path",args.data)
 corpus = data.Corpus(args.data)
 
 # Starting from sequential data, batchify arranges the dataset into columns.
